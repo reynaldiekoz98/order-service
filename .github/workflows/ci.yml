@@ -1,5 +1,5 @@
 # CI for order-service. ArgoCD is the CD half: this workflow never touches the cluster.
-# Its last job only records the new image tag in the GitOps repo (microservice-monorepo) by opening a PR there.
+# Its last job only records the new image tag in the GitOps repo (microservice-monorepo), committing it to main.
 #
 # Pull request into main:
 #   1. sast   Semgrep scans the repository; any finding fails the run.
@@ -9,13 +9,15 @@
 # Push to main (after a merge) that changes the app/image files:
 #   1. sast, 2. image  same gates as above, then push the exact image that was scanned to GHCR, tagged with the
 #                      7-character commit SHA (never `latest`).
-#   3. update-manifest Open a PR on microservice-monorepo that sets that tag in apps/order-service/deployment.yaml.
-#                      Merging that PR is the deploy: ArgoCD syncs it.
+#   3. update-manifest Commit the tag to apps/order-service/deployment.yaml on microservice-monorepo main (the job
+#                      bypasses that repo's pull-request ruleset). ArgoCD then syncs it: that is the deploy.
+#                      It only runs if sast and image passed.
 #
 # Every gate is a hard gate (no continue-on-error, no `|| true`): a failing scan means a red run in the history.
 #
-# Needs one repository secret, MONOREPO_TOKEN: a fine-grained PAT limited to reynaldiekoz98/microservice-monorepo
-# with "Contents: read and write" and "Pull requests: read and write". GITHUB_TOKEN cannot reach another repo.
+# Needs one repository secret, MONOREPO_TOKEN: a fine-grained PAT limited to reynaldiekoz98/microservice-monorepo with
+# "Contents: read and write". The repo's ruleset lists the Admin role as a bypass actor so this push is allowed
+# (see README). GITHUB_TOKEN cannot reach another repo.
 name: CI
 
 on:
@@ -114,7 +116,7 @@ jobs:
         run: docker push "$IMAGE_REF"
 
   update-manifest:
-    name: 3. Open a PR on microservice-monorepo with the new tag
+    name: 3. Update the manifest on microservice-monorepo
     needs: [image]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -122,6 +124,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Fine-grained PAT (Contents: write on microservice-monorepo only). It acts as the repo admin, who is on that
+      # repo's ruleset bypass list, so this job can push to main directly.
       - name: Checkout microservice-monorepo
         uses: actions/checkout@v7.0.1
         with:
@@ -129,29 +133,19 @@ jobs:
           token: ${{ secrets.MONOREPO_TOKEN }}
           ref: main
 
-      # main of the monorepo only accepts pull requests, so push a branch and open a PR. Not auto-merged:
-      # merging it is the (reviewed) deploy step.
-      - name: Set the new image tag and open the PR
+      - name: Set the new image tag and push to main
         env:
           TAG: ${{ needs.image.outputs.tag }}
-          GH_TOKEN: ${{ secrets.MONOREPO_TOKEN }}
           SOURCE_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          ACTOR_ID: ${{ github.actor_id }}
         run: |
           set -euo pipefail
           file="apps/${SERVICE}/deployment.yaml"
           sed -i -E "s|(image: ghcr.io/[^/]+/${SERVICE}:)[A-Za-z0-9._-]+|\1${TAG}|" "$file"
           grep -q "image: ghcr.io/.*/${SERVICE}:${TAG}$" "$file"
           if git diff --quiet; then echo "Manifest already uses ${TAG}; nothing to do."; exit 0; fi
-          branch="ci/${SERVICE}-${TAG}"
-          git config user.name "$ACTOR"
-          git config user.email "${ACTOR_ID}+${ACTOR}@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -am "ci: update ${SERVICE} image tag to ${TAG}"
-          git push --force origin "$branch"
-          if [ -z "$(gh pr list --repo "$MONOREPO" --head "$branch" --json number --jq '.[0].number')" ]; then
-            gh pr create --repo "$MONOREPO" --base main --head "$branch" \
-              --title "Deploy ${SERVICE} ${TAG}" \
-              --body "Built from https://github.com/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}. Merge to let ArgoCD deploy it."
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "ci: update ${SERVICE} image tag to ${TAG}" \
+            -m "Built from https://github.com/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}"
+          # Another service's bump may have landed meanwhile: rebase and retry once.
+          git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
