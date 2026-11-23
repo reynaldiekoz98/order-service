@@ -87,3 +87,16 @@ function dataTable(root, cols, opts) {
   return { set(rows) { data = rows; draw(); } };
 }
 renderNav();
+
+// Version bar on every page: the git SHA each service was built from (same as its image tag).
+async function renderVersions() {
+  try {
+    const r = await (await fetch('/status')).json();
+    const bar = document.createElement('footer');
+    bar.className = 'versions';
+    bar.innerHTML = [['user-service', 'user'], ['product-service', 'product'], ['order-service', 'order']].map(([name, k]) =>
+      `<span><span class="dot ${r[k].up ? 'up' : 'down'}"></span>${name} <code>${esc(r[k].version || 'unknown')}</code></span>`).join('');
+    document.body.append(bar);
+  } catch (e) { /* the version bar is optional */ }
+}
+renderVersions();
