@@ -16,7 +16,7 @@ async function loadHealth() {
   const r = await api('GET', '/status');
   if (!r) return;
   $('#health').innerHTML = SERVICES.map(([k, name]) =>
-    `<div class="card"><span class="dot ${r[k].up ? 'up' : 'down'}"></span><b>${name}</b><div class="muted">${r[k].up ? `up · ${r[k].ms} ms` : 'down'}</div></div>`).join('');
+    `<div class="card"><span class="dot ${r[k].up ? 'up' : 'down'}"></span><b>${name}</b><div class="muted">${r[k].up ? `up · ${r[k].ms} ms` : 'down'}</div><div class="muted">version: <code>${esc(r[k].version || 'unknown')}</code></div></div>`).join('');
 }
 
 loadCounts(); loadHealth();
