@@ -39,3 +39,5 @@ dialog .row{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem}
 .toast{padding:.6rem .9rem;border-radius:8px;background:var(--ink);color:var(--bg);box-shadow:0 4px 14px rgba(0,0,0,.25);animation:in .2s}
 .toast.err{background:var(--err);color:#fff}.toast.ok{background:var(--ok);color:#fff}
 @keyframes in{from{opacity:0;transform:translateY(8px)}}
+footer.versions{display:flex;gap:1.25rem;flex-wrap:wrap;justify-content:center;margin:2rem 1rem 1rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+footer.versions code{color:var(--ink)}
