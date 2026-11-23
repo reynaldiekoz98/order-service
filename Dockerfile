@@ -18,6 +18,9 @@ WORKDIR /app
 COPY --from=test --chown=node:node /app/index.js /app/package.json ./
 COPY --from=test --chown=node:node /app/src ./src
 COPY --from=test --chown=node:node /app/public ./public
+# Version = git SHA, passed by CI (--build-arg GIT_SHA=<sha>), the same value as the image tag.
+ARG GIT_SHA=dev
+ENV APP_VERSION=$GIT_SHA
 USER node
 EXPOSE 3003
 CMD ["node", "index.js"]

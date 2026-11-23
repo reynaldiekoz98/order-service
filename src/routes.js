@@ -9,17 +9,19 @@ module.exports = (router, store) => {
     return order;
   };
 
-  router.get('/health', ({ send }) => send(200, { status: 'ok', service: 'order-service' }));
+  const version = process.env.APP_VERSION || 'dev';   // git SHA baked into the image (same as the image tag)
+  router.get('/health', ({ send }) => send(200, { status: 'ok', service: 'order-service', version }));
+  router.get('/version', ({ send }) => send(200, { service: 'order-service', version }));
 
   // --- aggregated health of all three services (used by the dashboard) ---
   router.get('/status', async ({ send }) => {
     const ping = async base => {
       const t = Date.now();
-      try { const r = await fetch(base + '/health'); return { up: r.ok, ms: Date.now() - t }; }
+      try { const r = await fetch(base + '/health'); const b = await r.json().catch(() => ({})); return { up: r.ok, ms: Date.now() - t, version: b.version || null }; }
       catch { return { up: false, ms: null }; }
     };
     const [user, product] = await Promise.all([ping(USER_URL), ping(PRODUCT_URL)]);
-    send(200, { order: { up: true, ms: 0 }, user, product });
+    send(200, { order: { up: true, ms: 0, version }, user, product });
   });
 
   // --- orders CRUD ---
